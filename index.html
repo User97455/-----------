@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VERTEX | Ткани из Китая и Турции</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="app.js"></script>
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
     <style>
@@ -634,6 +636,11 @@
     <!-- СКРИПТ ПРИЛОЖЕНИЯ С ПОЛНЫМ CRUD -->
     <script>
         function megatextile() {
+            // Логика перенесена в app.js: данные хранятся в общей базе Supabase.
+            return window.megatextileCloud();
+
+            /* Устаревшая локальная версия оставлена ниже только для истории.
+               Она не выполняется и не используется сайтом. */
             const DEFAULT_BG = 'background.jpg';
 
             const DEFAULT_CATEGORIES = ['Рогожка', 'Велюр', 'Жаккард', 'Шенилл', 'Кожа'];
@@ -754,7 +761,7 @@
                 // Авторизация
                 login() {
                     const pass = prompt('Введите пароль администратора:');
-                    if (pass === '373697779' ) {
+                    if (pass === '__LEGACY_LOCAL_LOGIN_DISABLED__' ) {
                         this.isAdmin = true;
                         this.view = 'admin';
                     } else if (pass !== null) {
