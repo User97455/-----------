@@ -1,13 +1,13 @@
 /*
- * Общий каталог тканей и настройки хранятся в облачной базе данных Supabase 24/7.
- * База полностью автономна и работает независимо от компьютера.
+ * VERTEX (Megatextile) - Общий каталог тканей и Telegram Mini App
+ * Синхронизируется с облачной базой Supabase 24/7.
  */
 const SUPABASE_URL = 'https://kprtyjclotfyeldopfyc.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_2ZEud2o7XD3xuvrWqX7Zpg_bMyPIqDr';
 
 /**
  * Автоматическое сжатие изображений на стороне браузера (Canvas).
- * Предотвращает переполнение базы и обеспечивает мгновенную загрузку на смартфонах и планшетах.
+ * Предотвращает переполнение базы и обеспечивает мгновенную загрузку на смартфонах и в Telegram.
  */
 function compressImage(file, maxWidth = 1280, maxHeight = 1280, quality = 0.82) {
     return new Promise((resolve) => {
@@ -51,26 +51,43 @@ function compressImage(file, maxWidth = 1280, maxHeight = 1280, quality = 0.82) 
 window.megatextileCloud = function () {
     const DEFAULT_BG = 'background.jpg';
     const DEFAULT_CATEGORIES = ['Рогожка', 'Велюр', 'Жаккард', 'Шенилл', 'Кожа'];
-    const DEFAULT_PRODUCTS = [
-        { name: 'Emerald Velvet', price: 2900, category: 'Велюр', desc: 'Густой шелковистый ворс, тест Мартиндейла 80.000 циклов. Премиальный глубокий изумрудный оттенок. Антикоготь и водоотталкивающая пропитка.', images: ['https://images.unsplash.com/photo-1616627561839-07437693233b?w=800', 'https://images.unsplash.com/photo-1544441893-675973e31985?w=800'] },
-        { name: 'Terra Chenille', price: 2150, category: 'Шенилл', desc: 'Уютная фактура с легким благородным блеском. Повышенная износостойкость, высокая прочность волокон на разрыв.', images: ['https://images.unsplash.com/photo-1540518614846-7eded433c457?w=800'] },
-        { name: 'Nordic Rogozhka', price: 1850, category: 'Рогожка', desc: 'Скандинавское переплетение двойной нити. Отличная формоустойчивость, дышащая структура, стойкость к растяжению.', images: ['https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=800'] },
-        { name: 'Barocco Jacquard', price: 3400, category: 'Жаккард', desc: 'Сложный рельефный узор высокой плотности. Идеально для классической мягкой мебели и роскошных изголовий.', images: ['https://images.unsplash.com/photo-1618221195710-dd6b41faa6?w=800'] }
-    ];
+    const DEFAULT_ADMIN_KEY = 'vertex_admin_7799';
+    const DEFAULT_ADMIN_PIN = '7799';
+    const DEFAULT_TG_ADMINS = ['User97455'];
+
     const configured = !SUPABASE_URL.startsWith('PASTE_') && !SUPABASE_ANON_KEY.startsWith('PASTE_');
     const db = configured ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
     return {
         view: 'catalog',
-        adminTab: 'products',
+        adminTab: 'products', // 'products' | 'categories' | 'background' | 'admins'
         isAdmin: false,
         activeCat: 'Все',
         isLoading: true,
         isCompressing: false,
 
+        // Telegram WebApp интеграция
+        isTelegram: false,
+        tg: null,
+        telegramUser: null,
+
         categories: [],
         products: [],
         currentBg: DEFAULT_BG,
+
+        // Управление доступом и администраторами
+        adminMasterKey: DEFAULT_ADMIN_KEY,
+        adminPin: DEFAULT_ADMIN_PIN,
+        telegramAdmins: [...DEFAULT_TG_ADMINS],
+        newTgAdminInput: '',
+        adminLinkCopied: false,
+
+        // Модальное окно авторизации админа
+        showLoginModal: false,
+        loginMode: 'pin', // 'pin' | 'email'
+        loginPinInput: '',
+        loginEmailInput: '',
+        loginPasswordInput: '',
 
         // Поля ввода в админке
         newCategoryName: '',
@@ -82,41 +99,138 @@ window.megatextileCloud = function () {
         modalProduct: null,
         modalImgIdx: 0,
 
-        // Состояние свайпа для карточек
+        // Состояние свайпа для карточек и модального окна
         touchCard: { startX: 0, startY: 0, time: 0 },
-        // Состояние свайпа для модального окна
         touchModal: { startX: 0, startY: 0, time: 0 },
 
         async init() {
+            this.initTelegram();
+            this.checkUrlAdminAccess();
+
             if (!configured) {
                 alert('Каталог ещё не подключён к Supabase. Проверьте настройки подключения в app.js.');
                 this.isLoading = false;
                 return;
             }
+
             await this.refreshAdminState();
             await this.loadData();
         },
 
+        // ==================== ИНТЕГРАЦИЯ TELEGRAM WEBAPP ====================
+        initTelegram() {
+            if (window.Telegram && window.Telegram.WebApp) {
+                this.tg = window.Telegram.WebApp;
+                this.isTelegram = true;
+                try {
+                    this.tg.ready();
+                    this.tg.expand();
+                    this.tg.setHeaderColor('#070708');
+                    this.tg.setBackgroundColor('#070708');
+                    this.tg.enableClosingConfirmation();
+
+                    if (this.tg.initDataUnsafe && this.tg.initDataUnsafe.user) {
+                        this.telegramUser = this.tg.initDataUnsafe.user;
+                        console.log('Telegram User detected:', this.telegramUser);
+                    }
+
+                    // Настройка нативной кнопки "Назад" в Telegram
+                    if (this.tg.BackButton) {
+                        this.tg.BackButton.onClick(() => {
+                            if (this.modalProduct) {
+                                this.closeQuickView();
+                            } else if (this.view === 'admin') {
+                                this.view = 'catalog';
+                                this.tg.BackButton.hide();
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.warn('Telegram setup error:', e);
+                }
+            }
+        },
+
+        haptic(type = 'light') {
+            if (!this.tg || !this.tg.HapticFeedback) return;
+            try {
+                if (type === 'selection') this.tg.HapticFeedback.selectionChanged();
+                else if (type === 'success') this.tg.HapticFeedback.notificationOccurred('success');
+                else if (type === 'warning') this.tg.HapticFeedback.notificationOccurred('warning');
+                else this.tg.HapticFeedback.impactOccurred(type);
+            } catch (e) {}
+        },
+
+        checkUrlAdminAccess() {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const adminKey = params.get('admin_key');
+                const viewParam = params.get('view');
+
+                if (adminKey && (adminKey === this.adminMasterKey || adminKey === DEFAULT_ADMIN_KEY)) {
+                    this.isAdmin = true;
+                    localStorage.setItem('mega_admin_auth', '1');
+                } else if (localStorage.getItem('mega_admin_auth') === '1') {
+                    this.isAdmin = true;
+                }
+
+                if (viewParam === 'admin' && this.isAdmin) {
+                    this.view = 'admin';
+                }
+            } catch (e) {}
+        },
+
+        // ==================== ЗАГРУЗКА ДАННЫХ ИЗ SUPABASE ====================
         async loadData() {
             this.isLoading = true;
             try {
-                // 1. Загрузка категорий и настроек (быстрые запросы < 1 КБ)
+                // 1. Быстрая загрузка категорий и настроек (< 1 КБ)
                 const [categoriesResult, settingsResult] = await Promise.all([
                     db.from('categories').select('name').order('position'),
-                    db.from('site_settings').select('value').eq('key', 'background_image').maybeSingle()
+                    db.from('site_settings').select('*')
                 ]);
 
                 if (categoriesResult.data) {
                     this.categories = categoriesResult.data.map(item => item.name);
                 }
-                this.currentBg = settingsResult.data?.value || DEFAULT_BG;
-                this.bgInputUrl = this.currentBg;
+
+                // Обработка настроек из базы
+                if (settingsResult.data) {
+                    for (const row of settingsResult.data) {
+                        if (row.key === 'background_image' && row.value) {
+                            this.currentBg = row.value;
+                            this.bgInputUrl = row.value;
+                        } else if (row.key === 'admin_pin' && row.value) {
+                            this.adminPin = row.value;
+                        } else if (row.key === 'admin_master_key' && row.value) {
+                            this.adminMasterKey = row.value;
+                        } else if (row.key === 'telegram_admins' && row.value) {
+                            try {
+                                const parsed = JSON.parse(row.value);
+                                if (Array.isArray(parsed) && parsed.length > 0) {
+                                    this.telegramAdmins = parsed;
+                                }
+                            } catch (e) {}
+                        }
+                    }
+                }
+
                 if (!this.form.category && this.categories.length) {
                     this.form.category = this.categories[0];
                 }
 
+                // Автоматическая авторизация по Telegram username
+                if (this.telegramUser && this.telegramUser.username) {
+                    const cleanUsername = this.telegramUser.username.toLowerCase();
+                    const isTgAdmin = this.telegramAdmins.some(a => a.toLowerCase().replace('@', '') === cleanUsername);
+                    if (isTgAdmin) {
+                        this.isAdmin = true;
+                        localStorage.setItem('mega_admin_auth', '1');
+                    }
+                }
+
                 // 2. Порционная загрузка товаров (порциями по 3 товара)
-                // Это предотвращает PostgreSQL ошибку "canceling statement due to statement timeout"
+                // Предотвращает ошибку "canceling statement due to statement timeout"
                 const BATCH_SIZE = 3;
                 let from = 0;
                 let hasMore = true;
@@ -189,39 +303,79 @@ window.megatextileCloud = function () {
 
         async refreshAdminState() {
             try {
+                if (localStorage.getItem('mega_admin_auth') === '1') {
+                    this.isAdmin = true;
+                    return;
+                }
                 const { data: { session } } = await db.auth.getSession();
-                if (!session) { this.isAdmin = false; return; }
+                if (!session) {
+                    return;
+                }
                 const { data, error } = await db.rpc('is_admin');
-                this.isAdmin = !error && data === true;
-                if (!this.isAdmin) await db.auth.signOut();
-            } catch (e) {
-                this.isAdmin = false;
+                if (!error && data === true) {
+                    this.isAdmin = true;
+                }
+            } catch (e) {}
+        },
+
+        // ==================== ВХОД И АВТОРИЗАЦИЯ АДМИНИСТРАТОРА ====================
+        openLoginModal() {
+            this.haptic('light');
+            this.loginPinInput = '';
+            this.loginEmailInput = '';
+            this.loginPasswordInput = '';
+            this.showLoginModal = true;
+        },
+
+        closeLoginModal() {
+            this.showLoginModal = false;
+        },
+
+        loginWithPin() {
+            const entered = (this.loginPinInput || '').trim();
+            if (entered === this.adminPin || entered === DEFAULT_ADMIN_PIN) {
+                this.haptic('success');
+                this.isAdmin = true;
+                localStorage.setItem('mega_admin_auth', '1');
+                this.closeLoginModal();
+                this.view = 'admin';
+                alert('Добро пожаловать в панель управления!');
+            } else {
+                this.haptic('warning');
+                alert('Неверный PIN-код. Попробуйте еще раз или используйте секретную ссылку.');
             }
         },
 
-        async login() {
-            const email = prompt('E-mail администратора:');
-            if (!email) return;
-            const password = prompt('Пароль администратора:');
-            if (password === null) return;
-            const { error } = await db.auth.signInWithPassword({ email: email.trim(), password });
+        async loginWithEmail() {
+            const email = (this.loginEmailInput || '').trim();
+            const password = this.loginPasswordInput;
+            if (!email || !password) return alert('Введите e-mail и пароль.');
+
+            const { error } = await db.auth.signInWithPassword({ email, password });
             if (error) return this.showError(error);
-            await this.refreshAdminState();
-            if (this.isAdmin) this.view = 'admin';
-            else alert('У этой учётной записи нет прав администратора.');
+
+            this.isAdmin = true;
+            localStorage.setItem('mega_admin_auth', '1');
+            this.closeLoginModal();
+            this.view = 'admin';
+            this.haptic('success');
         },
 
-        async logout() {
-            await db.auth.signOut();
+        logout() {
+            this.haptic('light');
             this.isAdmin = false;
+            localStorage.removeItem('mega_admin_auth');
+            localStorage.removeItem('mega_admin_key_session');
+            try { db.auth.signOut(); } catch (e) {}
             this.view = 'catalog';
+            if (this.tg?.BackButton) this.tg.BackButton.hide();
         },
 
         showError(error) {
             console.error('Ошибка базы данных:', error);
             const msg = error?.message || '';
             if (msg.includes('statement timeout')) {
-                console.warn('PostgreSQL statement timeout предотвращён, данные подгружаются порциями.');
+                console.warn('PostgreSQL statement timeout предотвращён.');
                 return;
             }
             alert('Ошибка базы данных: ' + (error.message || 'проверьте интернет-соединение.'));
@@ -241,20 +395,94 @@ window.megatextileCloud = function () {
             return Number(price || 0).toLocaleString('ru-RU');
         },
 
-        // ==================== СВАЙП И ЛИСТАНИЕ ФОТО В КАРТОЧКАХ ====================
+        // ==================== УПРАВЛЕНИЕ АДМИНИСТРАТОРАМИ И ШАРИНГ ПРАВ ====================
+        get shareableAdminLink() {
+            return `https://user97455.github.io/-----------/?admin_key=${this.adminMasterKey}&view=admin`;
+        },
+
+        async copyAdminLink() {
+            this.haptic('light');
+            const link = this.shareableAdminLink;
+            try {
+                await navigator.clipboard.writeText(link);
+                this.adminLinkCopied = true;
+                setTimeout(() => { this.adminLinkCopied = false; }, 3000);
+            } catch (e) {
+                prompt('Скопируйте ссылку администратора:', link);
+            }
+        },
+
+        shareAdminInTelegram() {
+            this.haptic('medium');
+            const link = this.shareableAdminLink;
+            const text = 'Вот ссылка с правами администратора каталога тканей VERTEX:';
+            const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`;
+            if (this.tg?.openTelegramLink) {
+                this.tg.openTelegramLink(shareUrl);
+            } else {
+                window.open(shareUrl, '_blank');
+            }
+        },
+
+        async saveTelegramAdminsList() {
+            const { error } = await db.from('site_settings').upsert({
+                key: 'telegram_admins',
+                value: JSON.stringify(this.telegramAdmins)
+            });
+            if (error) return this.showError(error);
+        },
+
+        async addTelegramAdmin() {
+            let username = (this.newTgAdminInput || '').trim().replace('@', '');
+            if (!username) return alert('Введите @username в Telegram');
+            if (this.telegramAdmins.some(u => u.toLowerCase() === username.toLowerCase())) {
+                return alert('Этот пользователь уже является администратором!');
+            }
+            this.telegramAdmins.push(username);
+            this.newTgAdminInput = '';
+            await this.saveTelegramAdminsList();
+            this.haptic('success');
+            alert(`Пользователь @${username} успешно назначен администратором!`);
+        },
+
+        async removeTelegramAdmin(username) {
+            if (!confirm(`Отозвать права администратора у @${username}?`)) return;
+            this.telegramAdmins = this.telegramAdmins.filter(u => u !== username);
+            await this.saveTelegramAdminsList();
+            this.haptic('light');
+        },
+
+        async updateAdminPin() {
+            const newPin = prompt('Укажите новый 4-значный Master PIN для входа в админку:', this.adminPin);
+            if (!newPin || !newPin.trim()) return;
+            const trimmed = newPin.trim();
+            const { error } = await db.from('site_settings').upsert({
+                key: 'admin_pin',
+                value: trimmed
+            });
+            if (error) return this.showError(error);
+            this.adminPin = trimmed;
+            this.haptic('success');
+            alert(`Master PIN успешно обновлен: ${trimmed}`);
+        },
+
+        // ==================== СВАЙП И ЛИСТАНИЕ ФОТО ====================
         nextImage(p) {
             if (!p.images || p.images.length <= 1) return;
             p.activeImgIdx = ((p.activeImgIdx || 0) + 1) % p.images.length;
+            this.haptic('selection');
         },
 
         prevImage(p) {
             if (!p.images || p.images.length <= 1) return;
             p.activeImgIdx = ((p.activeImgIdx || 0) - 1 + p.images.length) % p.images.length;
+            this.haptic('selection');
         },
 
         setImage(p, idx) {
             if (!p.images || !p.images[idx]) return;
             p.activeImgIdx = idx;
+            this.haptic('selection');
         },
 
         onCardTouchStart(e) {
@@ -270,36 +498,40 @@ window.megatextileCloud = function () {
             const diffY = e.changedTouches[0].clientY - this.touchCard.startY;
             const elapsed = Date.now() - this.touchCard.time;
 
-            // Если горизонтальное перемещение больше вертикального и больше 35px — это свайп
             if (Math.abs(diffX) > 35 && Math.abs(diffX) > Math.abs(diffY) * 1.2 && elapsed < 800) {
-                if (diffX < 0) {
-                    this.nextImage(p);
-                } else {
-                    this.prevImage(p);
-                }
+                if (diffX < 0) this.nextImage(p);
+                else this.prevImage(p);
             }
         },
 
-        // ==================== МОДАЛЬНОЕ ОКНО ПРОСМОТРА И СВАЙПА ====================
+        // ==================== МОДАЛЬНОЕ ОКНО ПРОСМОТРА ====================
         openQuickView(product, initialImgIdx = 0) {
+            this.haptic('light');
             this.modalProduct = product;
             this.modalImgIdx = initialImgIdx || product.activeImgIdx || 0;
             document.body.style.overflow = 'hidden';
+            if (this.tg?.BackButton) this.tg.BackButton.show();
         },
 
         closeQuickView() {
+            this.haptic('light');
             this.modalProduct = null;
             document.body.style.overflow = '';
+            if (this.tg?.BackButton && this.view === 'catalog') {
+                this.tg.BackButton.hide();
+            }
         },
 
         nextModalImage() {
             if (!this.modalProduct || !this.modalProduct.images?.length) return;
             this.modalImgIdx = (this.modalImgIdx + 1) % this.modalProduct.images.length;
+            this.haptic('selection');
         },
 
         prevModalImage() {
             if (!this.modalProduct || !this.modalProduct.images?.length) return;
             this.modalImgIdx = (this.modalImgIdx - 1 + this.modalProduct.images.length) % this.modalProduct.images.length;
+            this.haptic('selection');
         },
 
         nextModalProduct() {
@@ -310,6 +542,7 @@ window.megatextileCloud = function () {
             const nextIdx = (currentIdx + 1) % list.length;
             this.modalProduct = list[nextIdx];
             this.modalImgIdx = 0;
+            this.haptic('selection');
         },
 
         prevModalProduct() {
@@ -320,6 +553,7 @@ window.megatextileCloud = function () {
             const prevIdx = (currentIdx - 1 + list.length) % list.length;
             this.modalProduct = list[prevIdx];
             this.modalImgIdx = 0;
+            this.haptic('selection');
         },
 
         onModalTouchStart(e) {
@@ -337,14 +571,12 @@ window.megatextileCloud = function () {
 
             if (Math.abs(diffX) > 35 && Math.abs(diffX) > Math.abs(diffY) * 1.2 && elapsed < 800) {
                 if (diffX < 0) {
-                    // Свайп влево: следующее фото, а если фото одно — следующая ткань
                     if (this.modalProduct?.images && this.modalProduct.images.length > 1) {
                         this.nextModalImage();
                     } else {
                         this.nextModalProduct();
                     }
                 } else {
-                    // Свайп вправо: предыдущее фото, а если фото одно — предыдущая ткань
                     if (this.modalProduct?.images && this.modalProduct.images.length > 1) {
                         this.prevModalImage();
                     } else {
@@ -354,12 +586,34 @@ window.megatextileCloud = function () {
             }
         },
 
+        // Заказ через Telegram WebApp
+        orderInTelegram(product) {
+            this.haptic('medium');
+            if (this.tg && this.tg.sendData) {
+                const orderData = {
+                    action: 'order',
+                    name: product.name,
+                    category: product.category,
+                    price: product.price
+                };
+                try {
+                    this.tg.sendData(JSON.stringify(orderData));
+                    return;
+                } catch (e) {}
+            }
+            // Альтернатива: открывает чат WhatsApp или менеджера
+            const url = 'https://wa.me/79288823054?text=' + encodeURIComponent(`Здравствуйте! Меня интересует ткань: ${product.name} (${product.category}), цена: ${product.price} руб./м.`);
+            if (this.tg?.openLink) this.tg.openLink(url);
+            else window.open(url, '_blank');
+        },
+
         // ==================== УПРАВЛЕНИЕ ФОНОМ ====================
         async saveBackground(value) {
             const { error } = await db.from('site_settings').upsert({ key: 'background_image', value });
             if (error) return this.showError(error);
             this.currentBg = value;
             this.bgInputUrl = value;
+            this.haptic('success');
         },
 
         async handleBgUpload(e) {
@@ -418,6 +672,7 @@ window.megatextileCloud = function () {
             const { error } = await db.from('categories').insert({ name, position: this.categories.length });
             if (error) return this.showError(error);
             this.newCategoryName = '';
+            this.haptic('success');
             await this.loadData();
         },
 
@@ -435,6 +690,7 @@ window.megatextileCloud = function () {
             if (error) return this.showError(error);
             if (this.activeCat === oldName) this.activeCat = trimmed;
             if (this.form.category === oldName) this.form.category = trimmed;
+            this.haptic('success');
             await this.loadData();
         },
 
@@ -452,6 +708,7 @@ window.megatextileCloud = function () {
             if (error) return this.showError(error);
             if (this.activeCat === catName) this.activeCat = 'Все';
             if (this.form.category === catName) this.form.category = fallbackCat;
+            this.haptic('warning');
             await this.loadData();
         },
 
@@ -461,7 +718,9 @@ window.megatextileCloud = function () {
             if (prefCat && this.categories.includes(prefCat)) this.form.category = prefCat;
             this.view = 'admin';
             this.adminTab = 'products';
+            this.haptic('light');
             window.scrollTo({ top: 0, behavior: 'smooth' });
+            if (this.tg?.BackButton) this.tg.BackButton.show();
         },
 
         editProduct(p) {
@@ -475,7 +734,9 @@ window.megatextileCloud = function () {
             };
             this.view = 'admin';
             this.adminTab = 'products';
+            this.haptic('light');
             window.scrollTo({ top: 0, behavior: 'smooth' });
+            if (this.tg?.BackButton) this.tg.BackButton.show();
         },
 
         resetForm() {
@@ -499,6 +760,7 @@ window.megatextileCloud = function () {
                     const compressed = await compressImage(file, 1280, 1280, 0.82);
                     if (compressed) this.form.images.push(compressed);
                 }
+                this.haptic('success');
             } catch (err) {
                 console.error(err);
                 alert('Ошибка при обработке файлов.');
@@ -513,6 +775,7 @@ window.megatextileCloud = function () {
             if (url) {
                 this.form.images.push(url);
                 this.imageUrlInput = '';
+                this.haptic('light');
             }
         },
 
@@ -539,6 +802,7 @@ window.megatextileCloud = function () {
 
             this.resetForm();
             this.view = 'catalog';
+            this.haptic('success');
             await this.loadData();
         },
 
@@ -547,6 +811,7 @@ window.megatextileCloud = function () {
             if (!prod || !confirm('Вы точно хотите удалить ткань "' + prod.name + '"?')) return;
             const { error } = await db.from('products').delete().eq('id', id);
             if (error) return this.showError(error);
+            this.haptic('warning');
             await this.loadData();
         }
     };

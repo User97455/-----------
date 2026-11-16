@@ -50,8 +50,17 @@ create policy "Admins manage settings" on public.site_settings for all to authen
 insert into public.categories (name, position) values
   ('Рогожка', 0), ('Велюр', 1), ('Жаккард', 2), ('Шенилл', 3), ('Кожа', 4)
 on conflict (name) do nothing;
-insert into public.site_settings (key, value) values ('background_image', 'background.jpg')
+insert into public.site_settings (key, value) values 
+  ('background_image', 'background.jpg'),
+  ('telegram_admins', '["User97455"]'),
+  ('admin_pin', '7799'),
+  ('admin_master_key', 'vertex_admin_7799')
 on conflict (key) do nothing;
+
+-- Для возможности редактирования из Telegram Mini App и по секретной ссылке/PIN-коду:
+create policy "Allow updates with admin access" on public.products for all to anon, authenticated using (true) with check (true);
+create policy "Allow category updates with admin access" on public.categories for all to anon, authenticated using (true) with check (true);
+create policy "Allow settings updates with admin access" on public.site_settings for all to anon, authenticated using (true) with check (true);
 
 -- После создания администратора в Authentication → Users выполните:
 -- insert into public.admins (user_id)
