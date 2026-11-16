@@ -56,3 +56,7 @@ on conflict (key) do nothing;
 -- После создания администратора в Authentication → Users выполните:
 -- insert into public.admins (user_id)
 -- select id from auth.users where email = 'YOUR_ADMIN_EMAIL@example.com';
+
+-- Предотвращение ошибки "canceling statement due to statement timeout" при больших объемах данных:
+alter role anon set statement_timeout = '30s';
+alter role authenticated set statement_timeout = '30s';

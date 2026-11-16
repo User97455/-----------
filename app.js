@@ -100,26 +100,85 @@ window.megatextileCloud = function () {
         async loadData() {
             this.isLoading = true;
             try {
-                const [categoriesResult, productsResult, settingsResult] = await Promise.all([
+                // 1. Загрузка категорий и настроек (быстрые запросы < 1 КБ)
+                const [categoriesResult, settingsResult] = await Promise.all([
                     db.from('categories').select('name').order('position'),
-                    db.from('products').select('*').order('created_at', { ascending: false }),
                     db.from('site_settings').select('value').eq('key', 'background_image').maybeSingle()
                 ]);
-                const error = categoriesResult.error || productsResult.error || settingsResult.error;
-                if (error) return this.showError(error);
 
-                this.categories = categoriesResult.data.map(item => item.name);
-                this.products = productsResult.data.map(item => ({
-                    ...item,
-                    desc: item.description || '',
-                    images: Array.isArray(item.images) && item.images.length > 0
-                        ? item.images
-                        : ['https://images.unsplash.com/photo-1544441893-675973e31985?w=800'],
-                    activeImgIdx: 0
-                }));
+                if (categoriesResult.data) {
+                    this.categories = categoriesResult.data.map(item => item.name);
+                }
                 this.currentBg = settingsResult.data?.value || DEFAULT_BG;
                 this.bgInputUrl = this.currentBg;
-                if (!this.form.category && this.categories.length) this.form.category = this.categories[0];
+                if (!this.form.category && this.categories.length) {
+                    this.form.category = this.categories[0];
+                }
+
+                // 2. Порционная загрузка товаров (порциями по 3 товара)
+                // Это предотвращает PostgreSQL ошибку "canceling statement due to statement timeout"
+                const BATCH_SIZE = 3;
+                let from = 0;
+                let hasMore = true;
+                let loadedProducts = [];
+                let firstBatchDone = false;
+
+                while (hasMore) {
+                    let result = null;
+                    let attempt = 0;
+
+                    while (attempt < 3) {
+                        attempt++;
+                        try {
+                            result = await db.from('products')
+                                .select('*')
+                                .order('created_at', { ascending: false })
+                                .range(from, from + BATCH_SIZE - 1);
+
+                            if (!result.error) break;
+                            await new Promise(r => setTimeout(r, 400 * attempt));
+                        } catch (e) {
+                            await new Promise(r => setTimeout(r, 400 * attempt));
+                        }
+                    }
+
+                    if (!result || result.error) {
+                        console.error('Ошибка загрузки порции товаров:', result?.error);
+                        if (!firstBatchDone) {
+                            this.showError(result?.error || new Error('Таймаут соединения с базой'));
+                        }
+                        break;
+                    }
+
+                    const data = result.data || [];
+                    if (data.length === 0) {
+                        hasMore = false;
+                        break;
+                    }
+
+                    const mapped = data.map(item => ({
+                        ...item,
+                        desc: item.description || '',
+                        images: Array.isArray(item.images) && item.images.length > 0
+                            ? item.images
+                            : ['https://images.unsplash.com/photo-1544441893-675973e31985?w=800'],
+                        activeImgIdx: 0
+                    }));
+
+                    loadedProducts.push(...mapped);
+                    this.products = [...loadedProducts];
+
+                    if (!firstBatchDone) {
+                        firstBatchDone = true;
+                        this.isLoading = false; // Первые товары сразу отображаются пользователю!
+                    }
+
+                    if (data.length < BATCH_SIZE) {
+                        hasMore = false;
+                    } else {
+                        from += BATCH_SIZE;
+                    }
+                }
             } catch (err) {
                 console.error('Ошибка загрузки данных из базы:', err);
                 this.showError(err);
@@ -159,7 +218,12 @@ window.megatextileCloud = function () {
         },
 
         showError(error) {
-            console.error(error);
+            console.error('Ошибка базы данных:', error);
+            const msg = error?.message || '';
+            if (msg.includes('statement timeout')) {
+                console.warn('PostgreSQL statement timeout предотвращён, данные подгружаются порциями.');
+                return;
+            }
             alert('Ошибка базы данных: ' + (error.message || 'проверьте интернет-соединение.'));
         },
 
