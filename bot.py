@@ -20,8 +20,7 @@ import urllib.parse
 from typing import Dict, Any, List, Optional
 
 # ==================== КОНФИГУРАЦИЯ БОТА ====================
-# Вставьте токен вашего бота от @BotFather (или передайте через переменную окружения BOT_TOKEN):
-BOT_TOKEN = os.getenv("BOT_TOKEN", "PASTE_YOUR_BOT_TOKEN_HERE")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "9161284109:AAE8SUu044PLoFJLGirCWhTqAzlptuAlvk0")
 
 # URL вашего опубликованного сайта (GitHub Pages):
 WEB_APP_URL = os.getenv("WEB_APP_URL", "https://user97455.github.io/-----------/")
