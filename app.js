@@ -64,6 +64,7 @@ window.megatextileCloud = function () {
         isAdmin: false,
         activeCat: 'Все',
         isLoading: true,
+        isBackgroundLoading: false,
         isCompressing: false,
 
         // Telegram WebApp интеграция
@@ -183,6 +184,7 @@ window.megatextileCloud = function () {
         // ==================== ЗАГРУЗКА ДАННЫХ ИЗ SUPABASE ====================
         async loadData() {
             this.isLoading = true;
+            this.isBackgroundLoading = false;
             try {
                 // 1. Быстрая загрузка категорий и настроек (< 1 КБ)
                 const [categoriesResult, settingsResult] = await Promise.all([
@@ -285,10 +287,12 @@ window.megatextileCloud = function () {
                     if (!firstBatchDone) {
                         firstBatchDone = true;
                         this.isLoading = false; // Первые товары сразу отображаются пользователю!
+                        this.isBackgroundLoading = hasMore;
                     }
 
                     if (data.length < BATCH_SIZE) {
                         hasMore = false;
+                        this.isBackgroundLoading = false;
                     } else {
                         from += BATCH_SIZE;
                     }
@@ -298,6 +302,7 @@ window.megatextileCloud = function () {
                 this.showError(err);
             } finally {
                 this.isLoading = false;
+                this.isBackgroundLoading = false;
             }
         },
 

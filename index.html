@@ -269,18 +269,29 @@
                 </div>
             </div>
 
-            <!-- ИНДИКАТОР ЗАГРУЗКИ (SKELETON) -->
+            <!-- ИНДИКАТОР ЗАГРУЗКИ (SKELETON И НАДПИСЬ) -->
             <template x-if="isLoading">
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8 lg:gap-10">
-                    <template x-for="i in [1, 2, 3, 4, 5, 6]" :key="i">
-                        <div class="glass-card rounded-3xl sm:rounded-[2.5rem] p-4 sm:p-5 flex flex-col h-[480px] animate-pulse">
-                            <div class="aspect-[4/5] rounded-2xl sm:rounded-[2rem] bg-white/5 mb-4"></div>
-                            <div class="h-6 bg-white/10 rounded-xl mb-3 w-3/4"></div>
-                            <div class="h-4 bg-white/5 rounded-lg mb-2 w-full"></div>
-                            <div class="h-4 bg-white/5 rounded-lg mb-4 w-1/2"></div>
-                            <div class="h-12 bg-white/10 rounded-2xl mt-auto"></div>
-                        </div>
-                    </template>
+                <div>
+                    <!-- Баннер о загрузке каталога -->
+                    <div class="glass p-6 sm:p-8 rounded-3xl border border-orange-500/20 text-center mb-8 flex flex-col items-center justify-center animate-pulse shadow-2xl">
+                        <div class="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+                        <h3 class="text-base sm:text-xl font-black uppercase italic tracking-tight text-white mb-1">
+                            Подождите немного, идет загрузка каталога...
+                        </h3>
+                        <p class="text-xs sm:text-sm text-gray-400">Загружаем ткани и фотографии из базы данных</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8 lg:gap-10">
+                        <template x-for="i in [1, 2, 3, 4, 5, 6]" :key="i">
+                            <div class="glass-card rounded-3xl sm:rounded-[2.5rem] p-4 sm:p-5 flex flex-col h-[480px] animate-pulse">
+                                <div class="aspect-[4/5] rounded-2xl sm:rounded-[2rem] bg-white/5 mb-4"></div>
+                                <div class="h-6 bg-white/10 rounded-xl mb-3 w-3/4"></div>
+                                <div class="h-4 bg-white/5 rounded-lg mb-2 w-full"></div>
+                                <div class="h-4 bg-white/5 rounded-lg mb-4 w-1/2"></div>
+                                <div class="h-12 bg-white/10 rounded-2xl mt-auto"></div>
+                            </div>
+                        </template>
+                    </div>
                 </div>
             </template>
 
@@ -417,6 +428,14 @@
                         </div>
                     </div>
                 </template>
+            </div>
+
+            <!-- ПЛАВАЮЩЕЕ УВЕДОМЛЕНИЕ О ЗАГРУЗКЕ ОСТАЛЬНЫХ ТОВАРОВ -->
+            <div x-show="isBackgroundLoading" 
+                 x-transition 
+                 class="fixed bottom-4 left-1/2 -translate-x-1/2 sm:translate-x-0 sm:left-auto sm:right-6 z-40 glass px-4 py-2.5 rounded-2xl flex items-center gap-2.5 text-xs border border-orange-500/30 shadow-2xl backdrop-blur-xl">
+                <div class="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+                <span class="text-gray-200 font-medium">Подождите немного, идет загрузка каталога...</span>
             </div>
         </main>
     </template>

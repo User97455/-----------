@@ -120,6 +120,7 @@ def send_welcome_message(chat_id: int, user_info: Dict[str, Any]):
         f"▫️ <b>Доставка:</b> по всему Кавказу, в рулонах и нарезкой\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"📲 <b>ИНТЕРАКТИВНЫЙ КАТАЛОГ:</b>\n"
+        f"⏳ <i>Подождите немного, идет загрузка каталога...</i>\n\n"
         f"Чтобы посмотреть образцы, свайпать фото тканей пальцем и узнать цены — "
         f"<b>нажмите на кнопку ниже</b>:\n\n"
         f"👇 <b>«🧵 ОТКРЫТЬ КАТАЛОГ ТКАНЕЙ»</b> 👇\n"
@@ -324,10 +325,12 @@ def run_bot():
                 # Команды
                 if text.startswith("/start"):
                     send_welcome_message(chat_id, user_info)
-                elif text.startswith("/catalog"):
+                elif text.startswith("/catalog") or "каталог" in text.lower():
+                    telegram_api("sendChatAction", {"chat_id": chat_id, "action": "typing"})
                     telegram_api("sendMessage", {
                         "chat_id": chat_id,
                         "text": (
+                            "⏳ <b>Подождите немного, идет загрузка каталога...</b>\n\n"
                             "📲 <b>Интерактивный каталог тканей VERTEX</b>\n\n"
                             "Нажмите на кнопку ниже, чтобы открыть мини-приложение, смотреть образцы и свайпать фотографии тканей 👇"
                         ),
